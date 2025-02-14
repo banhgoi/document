@@ -1,0 +1,171 @@
+analyze_and_payment là một Stored Procedure trong PL/SQL dùng để phân tích và xử lý thanh toán. Procedure này xử lý việc gạch nợ, cập nhật trạng thái hóa đơn và thực hiện các điều chỉnh liên quan đến thanh toán trong hệ thống billing/payment.
+
+2. Tham số đầu vào và đầu ra
+Tham số đầu vào
+Tên biến	Kiểu dữ liệu	Mô tả
+p_contract_id	NUMBER	Mã hợp đồng
+p_payment_amount	NUMBER	Số tiền thanh toán
+p_currtype	VARCHAR2	Loại tiền tệ
+p_receipt_date	DATE	Ngày ghi nhận thanh toán
+p_connection	NUMBER	Mã kết nối
+p_client_id	NUMBER	Mã khách hàng
+p_client_ip	VARCHAR2	Địa chỉ IP của khách hàng
+p_payment_staff_id	NUMBER	ID nhân viên thực hiện thanh toán
+p_payment_user_name	VARCHAR2	Tên người thực hiện thanh toán
+p_insert_staff_id	NUMBER	ID nhân viên ghi nhận giao dịch
+p_collection_staff_id	NUMBER	Nhân viên thu tiền
+p_collection_group_id	NUMBER	Nhóm thu tiền
+p_using_assign_info	BOOLEAN	Cờ kiểm tra có dùng thông tin thu nợ không
+p_isdn_charge	VARCHAR2	Mã ISDN của thanh toán
+Tham số đầu ra
+Tên biến	Kiểu dữ liệu	Mô tả
+p_transaction_id	OUT NUMBER	ID giao dịch phát sinh
+p_payment_id_list	OUT payment_id_list	Danh sách ID thanh toán
+p_error	OUT VARCHAR2	Lỗi nếu có
+3. Phân tích luồng xử lý của analyze_and_payment
+Bước 1: Khởi tạo biến
+Trong phần IS, một số biến cục bộ được khai báo để hỗ trợ xử lý, bao gồm:
+
+v_payment_id, v_transaction_id, v_payment_invoice_id: Dùng để lưu trữ thông tin thanh toán.
+v_collection_staff_id, v_collection_group_id: Lấy thông tin nhân viên và nhóm thu tiền.
+v_fee, v_indirect, v_description, v_format_invoice_num: Các biến hỗ trợ lưu trữ thông tin hóa đơn.
+Bước 2: Lấy thông tin từ collection_management
+sql
+Sao chép
+Chỉnh sửa
+IF (p_using_assign_info)
+THEN
+    IF (p_collection_staff_id IS NULL OR p_collection_group_id IS NULL)
+    THEN
+        SELECT collection_group_id
+        INTO v_collection_group_id
+        FROM bccs_payment.collection_management
+        WHERE applied_cycle = TRUNC(SYSDATE, 'mm')
+        AND contract_id = p_contract_id;
+
+        SELECT collection_staff_id
+        INTO v_collection_staff_id
+        FROM bccs_payment.collection_management
+        WHERE applied_cycle = TRUNC(SYSDATE, 'mm')
+        AND contract_id = p_contract_id;
+    ELSE
+        v_collection_staff_id := p_collection_staff_id;
+        v_collection_group_id := p_collection_group_id;
+    END IF;
+ELSE
+    v_collection_staff_id := NULL;
+    v_collection_group_id := NULL;
+END IF;
+Nếu p_using_assign_info là TRUE, hệ thống sẽ kiểm tra bảng collection_management để lấy thông tin về nhóm thu nợ (collection_group_id) và nhân viên thu nợ (collection_staff_id).
+Nếu không có dữ liệu, sẽ sử dụng thông tin truyền vào từ p_collection_staff_id và p_collection_group_id.
+Bước 3: Gọi analyze_printed_invoice để xử lý hóa đơn
+sql
+Sao chép
+Chỉnh sửa
+tab_print_invoice :=
+    pck_payment_general_invoice.analyze_printed_invoice (
+        p_contract_id,
+        p_payment_amount,
+        p_error
+    );
+Procedure analyze_printed_invoice thực hiện phân tích và xác định hóa đơn cần được xử lý cho hợp đồng p_contract_id.
+Nếu p_error có lỗi sau khi gọi procedure này, procedure sẽ dừng lại.
+Bước 4: Xử lý p_transaction_id
+sql
+Sao chép
+Chỉnh sửa
+IF (p_transaction_id IS NULL)
+THEN
+    SELECT pm_contract_transaction_seq.NEXTVAL
+    INTO v_transaction_id
+    FROM DUAL;
+
+    p_transaction_id := v_transaction_id;
+ELSE
+    v_transaction_id := p_transaction_id;
+END IF;
+Nếu p_transaction_id không có giá trị, nó sẽ được gán ID mới từ sequence pm_contract_transaction_seq.
+Nếu đã có p_transaction_id, nó sẽ được sử dụng lại.
+Bước 5: Kiểm tra điều kiện đặc biệt cho p_payment_type = 23
+sql
+Sao chép
+Chỉnh sửa
+IF (p_payment_type = '23')
+THEN
+    IF (is_hang(SYSDATE * 5 / 86400, p_bill_cycle_from))
+    THEN
+        v_force_not_pending := 1;
+    ELSE
+        v_force_not_pending := 0;
+    END IF;
+Nếu p_payment_type = 23, hệ thống kiểm tra xem giao dịch có đang bị treo không bằng cách gọi function is_hang().
+Nếu bị treo, đặt biến v_force_not_pending = 1, nếu không thì 0.
+Bước 6: Lặp qua danh sách tab_print_invoice
+sql
+Sao chép
+Chỉnh sửa
+FOR i IN 1 .. tab_print_invoice.COUNT
+LOOP
+    IF (tab_print_invoice(i).invoice_no IS NOT NULL
+        OR tab_print_invoice(i).invoice_no != 'INVOICE_ADJUST')
+    THEN
+        IF (tab_print_invoice(i).payment_currency > 0)
+        THEN
+            v_payment_id :=
+                pck_payment_general_invoice.vcpayment_direct_general (
+                    p_contract_id => p_contract_id,
+                    p_payment_amount => p_payment_amount,
+                    p_fee => v_fee,
+                    ...
+                );
+            v_payment_id_list.EXTEND;
+            v_index := v_payment_id_list.LAST;
+            v_payment_id_list(v_index).payment_id := v_payment_id;
+        END IF;
+    END IF;
+END LOOP;
+Lặp qua từng hóa đơn trong danh sách tab_print_invoice.
+Nếu hóa đơn hợp lệ, gọi vcpayment_direct_general để ghi nhận thanh toán.
+Lưu v_payment_id vào danh sách v_payment_id_list.
+Bước 7: Cập nhật vào adjustment_detail_indirect
+sql
+Sao chép
+Chỉnh sửa
+INSERT INTO bccs_payment.adjustment_detail_indirect (
+    adjustment_id,
+    contract_id,
+    sub_id,
+    bill_cycle,
+    applied_cycle,
+    amount,
+    create_date,
+    user_name,
+    description,
+    adjustment_type,
+    adj_id
+)
+VALUES (
+    p_adjust_id,
+    p_contract_id,
+    p_sub_id,
+    p_bill_cycle,
+    p_applied_cycle,
+    tab_print_invoice(i).payment_currency,
+    p_create_date,
+    'BILLING_BCCS',
+    v_description,
+    1,
+    NULL
+);
+Lưu dữ liệu điều chỉnh (adjustment) vào bảng adjustment_detail_indirect.
+4. Các Function & Procedure Được Gọi
+Tên Function/Procedure	Mô tả
+pck_payment_general_invoice.analyze_printed_invoice	Phân tích hóa đơn in ra
+pck_payment_general_invoice.vcpayment_direct_general	Ghi nhận thanh toán vào hệ thống
+is_hang()	Kiểm tra giao dịch có đang bị treo không
+pm_contract_transaction_seq.NEXTVAL	Lấy ID mới cho giao dịch
+5. Kết luận
+analyze_and_payment là procedure quan trọng để xử lý thanh toán, gạch nợ và điều chỉnh hóa đơn.
+Nó sử dụng nhiều function/procedure khác nhau, đặc biệt là từ package pck_payment_general_invoice.
+Có xử lý các trường hợp đặc biệt như hóa đơn treo (p_payment_type = 23), kiểm tra lỗi, và cập nhật điều chỉnh.
+Để hiểu chi tiết hơn, ta cần xem các procedure analyze_printed_invoice, vcpayment_direct_general, is_hang.

@@ -1,0 +1,51 @@
+1. Sơ đồ tổng quan
+Cấp cao nhất - Procedure chính
+analyze_and_payment → Procedure chính trong hệ thống phân tích và xử lý thanh toán.
+Các procedure mà analyze_and_payment gọi trực tiếp
+1.pck_payment_general_invoice.analyze_printed_invoice → Phân tích hóa đơn in.
+2.pck_payment_general_invoice.vcpayment_direct_general → Xử lý thanh toán hợp đồng.
+3.pck_adjust_general.insert_invoice → Ghi nhận hóa đơn điều chỉnh.
+4.pck_assign_invoice.insert_into_assign_invoice → Ghi nhận hóa đơn vào hệ thống phân công.
+Các procedure mà vcpayment_direct_general gọi
+1.re_analyze_hang → Kiểm tra lại các khoản công nợ bị treo.
+2.vcpayment_hang → Xử lý công nợ treo.
+3.analyze_and_payment (có thể gọi lại chính nó nếu cần).
+4.analyze_printed_invoice → Dùng để phân tích chi tiết hóa đơn.
+
+2. Danh sách theo cấp độ
+Dưới đây là danh sách procedure theo cấp độ từ lớn nhất đến chi tiết.
+
+Cấp 1: Procedure gốc (Lớn nhất)
+Procedure	            Mô tả
+analyze_and_payment	    Procedure chính, xử lý thanh toán, gạch nợ, điều chỉnh hóa đơn.
+Cấp 2: Procedure được gọi trực tiếp bởi analyze_and_payment
+Procedure	                                            Được gọi bởi	            Mô tả
+pck_payment_general_invoice.analyze_printed_invoice	    analyze_and_payment	        Phân tích hóa đơn trước khi xử lý.
+pck_payment_general_invoice.vcpayment_direct_general	analyze_and_payment	        Ghi nhận thanh toán vào hệ thống.
+pck_adjust_general.insert_invoice	                    analyze_and_payment	        Lưu dữ liệu điều chỉnh công nợ.
+pck_assign_invoice.insert_into_assign_invoice	        analyze_and_payment	        Ghi nhận hóa đơn vào hệ thống phân công.
+Cấp 3: Procedure được gọi bởi vcpayment_direct_general
+Procedure	                                            Được gọi bởi	            Mô tả
+re_analyze_hang	                                        vcpayment_direct_general	Kiểm tra lại các khoản công nợ bị treo.
+vcpayment_hang	                                        vcpayment_direct_general	Xử lý công nợ treo.
+analyze_printed_invoice	                                vcpayment_direct_general	Phân tích hóa đơn đã in.
+analyze_and_payment	                                    vcpayment_direct_general	Có thể được gọi lại để xử lý tiếp tục thanh toán.
+
+3. Lược đồ phụ thuộc
+Dưới đây là sơ đồ đơn giản về sự phụ thuộc giữa các procedure:
+
+analyze_and_payment
+│
+├── pck_payment_general_invoice.analyze_printed_invoice
+├── pck_payment_general_invoice.vcpayment_direct_general
+│   ├── re_analyze_hang
+│   ├── vcpayment_hang
+│   ├── analyze_printed_invoice
+│   ├── analyze_and_payment (có thể gọi lại chính nó)
+├── pck_adjust_general.insert_invoice
+└── pck_assign_invoice.insert_into_assign_invoice
+4. Tổng kết
+- analyze_and_payment là procedure lớn nhất và quan trọng nhất.
+- pck_payment_general_invoice.vcpayment_direct_general là thành phần chính xử lý thanh toán.
+- re_analyze_hang và vcpayment_hang giúp kiểm tra và xử lý công nợ treo.
+- pck_adjust_general.insert_invoice và pck_assign_invoice.insert_into_assign_invoice phục vụ cho việc ghi nhận hóa đơn điều chỉnh.
