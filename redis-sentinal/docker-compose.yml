@@ -1,0 +1,43 @@
+version: '3'
+services:
+  redis-master:
+    image: redis:6.2
+    container_name: redis-master
+    ports:
+      - "6379:6379"
+    networks:
+      - redis-net
+    command: redis-server --appendonly yes
+
+  redis-slave1:
+    image: redis:6.2
+    container_name: redis-slave1
+    ports:
+      - "6380:6379"
+    networks:
+      - redis-net
+    command: redis-server --slaveof redis-master 6379 --appendonly yes
+
+  redis-slave2:
+    image: redis:6.2
+    container_name: redis-slave2
+    ports:
+      - "6381:6379"
+    networks:
+      - redis-net
+    command: redis-server --slaveof redis-master 6379 --appendonly yes
+
+  redis-sentinel:
+    image: redis:6.2
+    container_name: redis-sentinel
+    ports:
+      - "26379:26379"
+    networks:
+      - redis-net
+    volumes:
+      - ./sentinel.conf:/etc/redis/sentinel.conf  # Mount file cấu hình
+    command: redis-server /etc/redis/sentinel.conf --sentinel
+
+networks:
+  redis-net:
+    driver: bridge

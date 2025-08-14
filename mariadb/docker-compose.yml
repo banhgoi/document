@@ -1,0 +1,18 @@
+services:
+
+  mariadb:
+    build: .
+    container_name: maria
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456a@
+      MYSQL_DATABASE: shop
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: 123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - my_db_data:/var/lib/mysql
+
+volumes:
+  my_db_data:

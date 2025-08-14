@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50000:50000" # Dành cho agent
+    volumes:
+      - jenkins_home:/var/jenkins_home
+    user: root # Cho phép cài thêm tool như docker, git...
+
+volumes:
+  jenkins_home:

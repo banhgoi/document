@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  mariadb:
+    build: .
+    container_name: maria
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456a@
+      MYSQL_DATABASE: shop
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: 123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - my_db_data:/var/lib/mysql
+      - mysqld_run:/run/mysqld
+
+volumes:
+  my_db_data:
+  mysqld_run:
